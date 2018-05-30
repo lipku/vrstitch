@@ -1,16 +1,38 @@
 set(SOURCE_FILES 
     app.cpp
-    main.cpp)
+    main.cpp
+    srs_librtmp.cpp
+    flvenc.cpp
+    g711.c
+    RTSPProtocol.cpp
+    VideoSource.cpp
+    FrameQueue.cpp
+    VideoDecoder.cpp
+    VideoParser.cpp
+    cudaProcessFrame.cpp
+    thirdparty/cuvid/src/cudaModuleMgr.cpp
+    thirdparty/cuvid/src/NvHWEncoder.cpp
+    thirdparty/cuvid/src/dynlink_cuda.cpp
+    thirdparty/cuvid/src/dynlink_nvcuvid.cpp)
 
 set(HEADER_FILES
-    app.h)
+    app.h
+    srs_librtmp.h
+    flv.h
+    g711.h
+    RTSPProtocol.h
+    VideoSource.h
+    FrameQueue.h
+    VideoDecoder.h
+    VideoParser.h
+    cudaProcessFrame.h)
 
 # Set Visual Studio source filters
 source_group("Source Files" FILES ${SOURCE_FILES})
 source_group("Header Files" FILES ${HEADER_FILES})
 
 add_executable(nvstitch_sample ${SOURCE_FILES} ${HEADER_FILES})
-target_include_directories(nvstitch_sample PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(nvstitch_sample PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} thirdparty/cuvid/inc)
 target_link_libraries(nvstitch_sample PRIVATE nvstitch common_sample common_util OpenCV)
 
 set_target_properties(nvstitch_sample PROPERTIES FOLDER SampleApps)

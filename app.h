@@ -4,7 +4,7 @@
 
 #include <stdint.h>
 #include <vector>
-#include <Windows.h>
+#include <pthread.h>
 
 /*
 extern "C"
@@ -32,14 +32,6 @@ extern "C"
 
 }
 
-#pragma comment(lib, "avcodec.lib")
-#pragma comment(lib, "avformat.lib")
-#pragma comment(lib, "avutil.lib")
-#pragma comment(lib, "avfilter.lib")
-#pragma comment(lib, "avdevice.lib")
-#pragma comment(lib, "postproc.lib")
-#pragma comment(lib, "swresample.lib")
-#pragma comment(lib, "swscale.lib")
 */
 
 #include "FrameQueue.h"
@@ -59,6 +51,9 @@ extern "C"
 #include "flv.h"
 #include "fdk-aac/aacenc_lib.h"
 #include "fdk-aac/aacdecoder_lib.h"
+
+typedef pthread_mutex_t CRITICAL_SECTION;
+
 
 #define RETURN_NVSTITCH_ERROR(err) \
 do { \
@@ -209,11 +204,8 @@ typedef enum
 	NV_ENC_DX10 = 3,
 } NvEncodeDeviceType;
 
-namespace Common {
-	class CThread;
-}
+
 class VideoSource;
-class AudioCap;
 class app
 {
 public:
@@ -226,6 +218,10 @@ public:
 
 	int processStitchedOutput(unsigned char* buffer, int bufsize, int64_t timestamp);
 
+	void stitch_thread();
+	//void stitch_out_thread();
+	void stitch_audio_thread();
+	void encode_thread();
 
 private:
 	nvstitchResult getStitchedOut();
@@ -241,7 +237,7 @@ private:
 	std::vector<VideoSource*> s_videoSources;
 	bool  calibrated_ = false;
 
-	AudioCap *audioCap_;
+	//AudioCap *audioCap_;
 	nvsf_t nvsfContext_ = NULL;
 	nvsfInputDescriptor_t* inputs_=NULL;
 	nvsfInput_t* inputHandles_=NULL;
@@ -261,21 +257,17 @@ private:
 	//MP4TrackId mp4VideoTrack_;
 	//MP4TrackId mp4AudioTrack_;
 	flv_t *flvHandle_;
-
-	void stitch_thread(void* lpParam);
-	Common::CThread* stitch_thread_ptr=NULL;
+	
+	pthread_t stitch_thread_ptr=NULL;
 	int bStitchThreadExit;
 
-	void stitch_out_thread(void* lpParam);
-	Common::CThread* stitch_out_thread_ptr=NULL;
-	int bStitchOutThreadExit;
-
-	void stitch_audio_thread(void* lpParam);
-	Common::CThread* stitch_audio_thread_ptr=NULL;
+	//pthread_t stitch_out_thread_ptr=NULL;
+	//int bStitchOutThreadExit;
+	
+	pthread_t stitch_audio_thread_ptr=NULL;
 	int bStitchAudioThreadExit;
 
-	void encode_thread(void* lpParam);
-	Common::CThread* encode_thread_ptr=NULL;
+	pthread_t encode_thread_ptr=NULL;
 	int bEncodeThreadExit;
 
 	CUVIDEOFORMAT	stFormat_;

@@ -1,6 +1,4 @@
 
-#include <windows.h>
-
 #include "app.h"
 
 #include <fstream>
@@ -8,15 +6,14 @@
 #include <iostream>
 #include <chrono>
 #include <string>
+#include <time.h>
 #include "cuda.h"
 #include "cuda_runtime.h"
 
 //#include "image_io_util.hpp"
 #include "VideoSource.h"
-#include "audiocap.h"
 
 #include "srs_librtmp.h"
-#pragma comment(lib, "srslibrtmp.lib")
 
 #include "helper_functions.h"
 #include "helper_cuda_drvapi.h"
@@ -25,11 +22,10 @@
 #include "cudaProcessFrame.h"
 #include "cudaModuleMgr.h"
 
-#include "thread.hpp"
 
 
-//CUmoduleManager   *g_pCudaModule;
-//CUfunction         g_kernelNV12toARGB = 0;
+CUmoduleManager   *g_pCudaModule;
+CUfunction         g_kernelNV12toARGB = 0;
 bool                g_bUpdateCSC = true;
 CUstream            g_ReadbackSID = 0, g_KernelSID = 0;  //
 
@@ -38,6 +34,28 @@ float              g_nHue = 0.0f;
 
 using std::chrono::milliseconds;
 using std::chrono::high_resolution_clock;
+
+static unsigned int msecond()
+{
+	timeval tv;
+	gettimeofday(&tv,NULL);
+	return tv.tv_sec*1000 + tv.tv_usec/1000;
+}
+
+static void InitializeCriticalSection(CRITICAL_SECTION *pCS)
+{
+	pthread_mutex_init(pCS, NULL);
+}
+
+static void EnterCriticalSection(CRITICAL_SECTION *pCS)
+{
+	pthread_mutex_lock(pCS);
+}
+
+static void LeaveCriticalSection(CRITICAL_SECTION *pCS)
+{
+	pthread_mutex_unlock(pCS);
+}
 
 // This is the CUDA stage for Video Post Processing.  Last stage takes care of the NV12 to ARGB
 static void cudaPostProcessFrame(CUdeviceptr *ppDecodedFrame, size_t nDecodedPitch, int nBytesPerSample,
@@ -162,14 +180,14 @@ void NVSTITCHCALLBACK onStitchedOutput(unsigned char* buffer, int bufsize, int64
 
 int app::processStitchedOutput(unsigned char* buffer, int bufsize, int64_t timestamp)
 {
-	unsigned int nowMs = GetTickCount();
+	unsigned int nowMs = msecond();
 	if (buffer && bufsize>0)
 	{
 		if (rtmp_)
 		{
 			EnterCriticalSection(&rtmpCriticalSection_);
 			int ret = srs_h264_write_raw_frames(rtmp_, (char *)buffer,
-				bufsize, nowMs - startMS, nowMs - startMS); //out_payload->payload.frame.timestamp/10000  GetTickCount() - startMS
+				bufsize, nowMs - startMS, nowMs - startMS); //out_payload->payload.frame.timestamp/10000  
 			if (ret != 0) {
 				if (srs_h264_is_dvbsp_error(ret)) {
 					srs_human_trace("ignore drop video error, code=%d", ret);
@@ -208,39 +226,6 @@ int app::processStitchedOutput(unsigned char* buffer, int bufsize, int64_t times
 	return 0;
 }
 
-void YCrCb2RGBConver(uint8 *pYdata, uint8 *pUVdata, int stepY, int stepUV, uint8 *pImgData, int width, int height, int channels)
-{
-
-	for (int i = 0; i < height; i++)
-	{
-		for (int j = 0; j < width; j++)
-		{
-			int indexY, indexU, indexV;
-			uint8 Y, U, V;
-			indexY = i * stepY + j;
-			Y = pYdata[indexY];
-
-			if (j % 2 == 0)
-			{
-				indexU = i / 2 * stepUV + j;
-				indexV = i / 2 * stepUV + j + 1;
-				U = pUVdata[indexU];
-				V = pUVdata[indexV];
-			}
-			else if (j % 2 == 1)
-			{
-				indexV = i / 2 * stepUV + j;
-				indexU = i / 2 * stepUV + j - 1;
-				U = pUVdata[indexU];
-				V = pUVdata[indexV];
-			}
-
-			pImgData[(i*width + j) * channels + 2] = uint8(Y + 1.402 * (V - 128));
-			pImgData[(i*width + j) * channels + 1] = uint8(Y - 0.34413 * (U - 128) - 0.71414*(V - 128));
-			pImgData[(i*width + j) * channels + 0] = uint8(Y + 1.772*(U - 128));
-		}
-	}
-}
 
 nvstitchResult
 app::run(appParams *params)
@@ -249,7 +234,6 @@ app::run(appParams *params)
 	InitializeCriticalSection(&aCriticalSection_);
 	InitializeCriticalSection(&rtmpCriticalSection_);
 	srs_write_video_ = false;
-	audioCap_ = NULL;
 	rtmp_ = NULL;
 	//mp4fileHandle_ = NULL;
 	//mp4VideoTrack_ = 0;
@@ -332,7 +316,7 @@ app::run(appParams *params)
 			break;
 		} while (1);
 	}
-	startMS = GetTickCount();
+	startMS = msecond();
 	/*********************************************************/
 
 	nvstitchResult res = NVSTITCH_SUCCESS;
@@ -368,8 +352,8 @@ app::run(appParams *params)
 		initAACEncode();
 		if (params->audio_type == "mic")
 		{
-			audioCap_ = new AudioCap(0, this);
-			audioCap_->StartCap();
+			/*audioCap_ = new AudioCap(0, this);
+			audioCap_->StartCap();*/
 		}
 		else
 		{
@@ -404,16 +388,9 @@ app::run(appParams *params)
 			outBuffers_[1] = new float[processingSize];
 			outPcmBuffer = new short[processingSize*2];
 
-			//start stitch thread
-			LPVOID arg_ = NULL;
-			Common::ThreadCallback cbAudio = BIND_MEM_CB(&app::stitch_audio_thread, this);
-			stitch_audio_thread_ptr = new Common::CThread(cbAudio, TRUE);
-			if (!stitch_audio_thread_ptr)
-			{
-				return NVSTITCH_SUCCESS;
-			}
+			//start stitch audio thread
 			bStitchAudioThreadExit = FALSE;
-			stitch_audio_thread_ptr->start(arg_);
+			pthread_create(&stitch_audio_thread_ptr, NULL, stitchAudioProc, (void*)this);
 		}
 	}
 
@@ -446,9 +423,10 @@ app::run(appParams *params)
 		// If the CUmoduleManager constructor fails to load the PTX file, it will throw an exception
 		printf("\n>> CUmoduleManager::Exception!  %s not found!\n", p_file);
 		printf(">> Please rebuild NV12ToARGB_drvapi.cu or re-install this sample.\n");
-	}
+	}*/
 
-	g_pCudaModule->GetCudaFunction("NV12ToARGB_drvapi", &g_kernelNV12toARGB);*/
+	g_pCudaModule = new CUmoduleManager("NV12ToARGB_drvapi_x64.ptx", ".", 2, 2, 2);
+	g_pCudaModule->GetCudaFunction("NV12ToARGB_drvapi", &g_kernelNV12toARGB);
 
 	CUresult result;
 
@@ -541,25 +519,14 @@ app::run(appParams *params)
 	//--------------------------------------------------------
 
 	//start stitch thread
-	LPVOID arg_ = NULL;
-	Common::ThreadCallback cb = BIND_MEM_CB(&app::stitch_thread, this);
-	stitch_thread_ptr = new Common::CThread(cb, TRUE);
-	if (!stitch_thread_ptr)
-	{
-		return NVSTITCH_SUCCESS;
-	}
 	bStitchThreadExit = FALSE;
-	stitch_thread_ptr->start(arg_);
+	pthread_create(&stitch_thread_ptr, NULL, stitchProc, (void*)this);
 
 	//start encode thread
 	Common::ThreadCallback cbEnc = BIND_MEM_CB(&app::encode_thread, this);
-	encode_thread_ptr = new Common::CThread(cbEnc, TRUE);
-	if (!encode_thread_ptr)
-	{
-		return NVSTITCH_SUCCESS;
-	}
+	
 	bEncodeThreadExit = FALSE;
-	encode_thread_ptr->start(arg_);
+	pthread_create(&encode_thread_ptr, NULL, encodeProc, (void*)this);
 	//--------------------------------------------------------------------
 	
 	for (int i = 0; i < params->rig_properties.num_cameras; i++)
@@ -569,7 +536,7 @@ app::run(appParams *params)
 
 	//cv::waitKey();
 	while ( getchar() != 'q') {
-		Sleep(1000);
+		usleep(1000*1000);
 	}
 
 	for (int i = 0; i < params->rig_properties.num_cameras; i++)
@@ -580,28 +547,21 @@ app::run(appParams *params)
 	bStitchThreadExit = TRUE;
 	if (stitch_thread_ptr)
 	{
-		stitch_thread_ptr->join();
+		pthread_join(stitch_thread_ptr, NULL);
 		stitch_thread_ptr = NULL;
-	}
-
-	bStitchOutThreadExit = TRUE;
-	if (stitch_out_thread_ptr)
-	{
-		stitch_out_thread_ptr->join();
-		stitch_out_thread_ptr = NULL;
 	}
 
 	bStitchAudioThreadExit = TRUE;
 	if (stitch_audio_thread_ptr)
 	{
-		stitch_audio_thread_ptr->join();
+		pthread_join(stitch_audio_thread_ptr, NULL);
 		stitch_audio_thread_ptr = NULL;
 	}
 
 	bEncodeThreadExit = TRUE;
 	if (encode_thread_ptr)
 	{
-		encode_thread_ptr->join();
+		pthread_join(encode_thread_ptr, NULL);
 		encode_thread_ptr = NULL;
 	}
 
@@ -612,10 +572,6 @@ app::run(appParams *params)
 		delete m_pNvHWEncoder;
 	}
 
-	if (audioCap_)
-	{
-		delete audioCap_;
-	}
 	if(m_aacEncHandle)
 		aacEncClose(&m_aacEncHandle);
 	if (nvsfContext_)
@@ -669,7 +625,13 @@ app::run(appParams *params)
 }
 
 
-void app::stitch_thread(LPVOID lpParam)
+void app::stitch_thread(void* lpParam)
+{
+	app *pApp=(app*)lpParam;
+	pApp->stitch_thread();
+}
+
+void app::stitch_thread()
 {
 	char *updateFrame = new char[m_params->rig_properties.num_cameras];
 	memset(updateFrame, 0, sizeof(char)*m_params->rig_properties.num_cameras);
@@ -736,7 +698,7 @@ void app::stitch_thread(LPVOID lpParam)
 					cuvidCtxLock(oCtxLock_[i], 0);
 					cudaPostProcessFrame(&pDecodedFrame, nDecodedPitch, pVideoDecoders[i]->GetNumBytesPerSample(), &pCudaFrame_,
 						pVideoDecoders[i]->targetWidth() * 4, pVideoDecoders[i]->targetWidth(), pVideoDecoders[i]->targetHeight(),
-						NULL, NULL, g_KernelSID); //g_pCudaModule->getModule()
+						g_pCudaModule->getModule(), g_kernelNV12toARGB, g_KernelSID); //g_pCudaModule->getModule()
 					/*result = cuMemcpyDtoHAsync(pFrameYUV_, pCudaFrame_, (pVideoDecoders[i]->targetWidth() * pVideoDecoders[i]->targetHeight() * 4), g_ReadbackSID);
 					if (result != CUDA_SUCCESS)
 					{
@@ -800,7 +762,7 @@ void app::stitch_thread(LPVOID lpParam)
 					}
 					cudaPostProcessFrame(&pCudaFrameNV12_, nDecodedPitch, pVideoDecoders[i]->GetNumBytesPerSample(), &pCudaFrame_,
 						pVideoDecoders[i]->targetWidth()*4 , pVideoDecoders[i]->targetWidth(), pVideoDecoders[i]->targetHeight(),
-						NULL, NULL, g_KernelSID);
+						g_pCudaModule->getModule(), g_kernelNV12toARGB, g_KernelSID);
 					cudaStreamSynchronize(g_KernelSID);
 
 					if ((cudaerr = cudaMemcpy2D(input_image.dev_ptr, input_image.pitch,
@@ -1000,7 +962,7 @@ nvstitchResult app::getStitchedOut()
 }
 
 
-void app::stitch_out_thread(LPVOID lpParam)  //not use
+void app::stitch_out_thread(void* lpParam)  //not use
 {
 	// Synchronize CUDA before snapping start time
 	//cudaStreamSynchronize(cudaStreamDefault);
@@ -1068,7 +1030,13 @@ void app::stitch_out_thread(LPVOID lpParam)  //not use
 	//return NVSTITCH_SUCCESS;
 }
 
-void app::encode_thread(LPVOID lpParam)
+void encodeProc(void* lpParam)
+{
+	app *pApp=(app*)lpParam;
+	pApp->encode_thread();
+}
+
+void app::encode_thread()
 {
 	while (!bEncodeThreadExit)
 	{
@@ -1077,7 +1045,7 @@ void app::encode_thread(LPVOID lpParam)
 		EncodeBuffer *pEncodeBuffer = m_EncodeBufferQueue.GetPending();
 		if (!pEncodeBuffer)
 		{
-			Sleep(10);
+			usleep(10*1000);
 			continue;
 		}
 		m_pNvHWEncoder->ProcessOutput(pEncodeBuffer);
@@ -1342,7 +1310,13 @@ nvstitchResult app::feedAudioData(int index, void* pData, int size, int64_t time
 	return NVSTITCH_SUCCESS;
 }
 
-void app::stitch_audio_thread(LPVOID lpParam)
+void stitchAudioThread(void* lpParam)
+{
+	app *pApp=(app*)lpParam;
+	pApp->stitch_audio_thread();
+}
+
+void app::stitch_audio_thread()
 {
 	while (!bStitchAudioThreadExit)
 	{
@@ -1441,7 +1415,7 @@ int app::onAudioStitchedOutput(unsigned char* buffer, int bufsize, int64_t times
 		{
 			EnterCriticalSection(&rtmpCriticalSection_);
 			int ret = srs_audio_write_raw_frame(rtmp_, 10, 3, 1, 1, (char *)buffer,
-				bufsize, GetTickCount() - startMS); //GetTickCount() - startMS
+				bufsize, msecond() - startMS); 
 			if (ret != 0) {
 				srs_human_trace("send audio raw data failed. ret=%d", ret);
 				//goto rtmp_destroy;
@@ -1455,7 +1429,7 @@ int app::onAudioStitchedOutput(unsigned char* buffer, int bufsize, int64_t times
 		//}
 		if (flvHandle_)
 		{
-			flv_write_audio_packet(flvHandle_, (uint8_t *)buffer+7, bufsize-7, GetTickCount() - startMS); //timestamp
+			flv_write_audio_packet(flvHandle_, (uint8_t *)buffer+7, bufsize-7, msecond() - startMS); //timestamp
 		}
 	}
 	return 0;

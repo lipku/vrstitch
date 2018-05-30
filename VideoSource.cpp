@@ -15,13 +15,18 @@
 
 #include <time.h>
 #include <assert.h>
-#include "thread.hpp"
 #include "helper_cuda_drvapi.h"
 
 #include "FrameQueue.h"
 #include "VideoParser.h"
 #include "g711.h"
 
+static unsigned int msecond()
+{
+	timeval tv;
+	gettimeofday(&tv,NULL);
+	return tv.tv_sec*1000 + tv.tv_usec/1000;
+}
 
 
 VideoSource::VideoSource()
@@ -31,7 +36,7 @@ VideoSource::VideoSource()
 	play_thread_ptr = NULL;
 
 	recordPath_ = "";
-	startMS = GetTickCount();
+	startMS = msecond();
 
 }
 
@@ -101,7 +106,7 @@ int VideoSource::ProcessStream(unsigned char *pBuffer, unsigned int dwBufSize,un
 		if (flvHandle_)
 		{
 			int iskeyframe = ((uint8_t *)pBuffer)[4] == 0x67 || ((uint8_t *)pBuffer)[4] == 0x65;
-			flv_write_video_packet(flvHandle_, iskeyframe, (uint8_t *)pBuffer, dwBufSize, GetTickCount() - startMS); /// 10000
+			flv_write_video_packet(flvHandle_, iskeyframe, (uint8_t *)pBuffer, dwBufSize, msecond() - startMS); /// 10000
 		}
 	}
 	else if (!strcmp(payloadtype, "JPEG")) {
@@ -201,7 +206,7 @@ void VideoSource::start()
 	bThreadExit = TRUE;
 	if (play_thread_ptr)
 	{
-		play_thread_ptr->join();
+		pthread_join(play_thread_ptr, NULL);
 		play_thread_ptr = NULL;
 	}
 
@@ -307,17 +312,14 @@ void VideoSource::start()
 	}
 	/****************************************************************/
 
-	LPVOID arg_ = NULL;
-	Common::ThreadCallback cb = BIND_MEM_CB(&VideoSource::play_thread, this);
-	play_thread_ptr = new Common::CThread(cb, TRUE);
+	bThreadExit = FALSE;
+	pthread_create(&play_thread_ptr, NULL, playProc, (void*)this);
 	if (!play_thread_ptr)
 	{
 		return ;
 	}
 
-	bThreadExit = FALSE;
-
-	play_thread_ptr->start(arg_);
+	
 }
 
 void VideoSource::stop()
@@ -326,7 +328,7 @@ void VideoSource::stop()
 	watchEvent = 0xFF;
 	if (play_thread_ptr)
 	{
-		play_thread_ptr->join();
+		pthread_join(play_thread_ptr, NULL);
 		play_thread_ptr = NULL;
 	}
 }
@@ -336,8 +338,13 @@ bool VideoSource::isStarted()
 	return bStarted;
 }
 
+void playProc(void* lpParam)
+{
+	VideoSource *pSource = (VideoSource *)lpParam;
+	pSource->play_thread();
+}
 
-void VideoSource::play_thread(LPVOID lpParam)
+void VideoSource::play_thread()
 {
 	watchEvent = 0;
 	env->taskScheduler().doEventLoop(&watchEvent); // does not return

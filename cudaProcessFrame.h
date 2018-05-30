@@ -1,5 +1,5 @@
-/*
- * Copyright 1993-2014 NVIDIA Corporation.  All rights reserved.
+/**
+ * Copyright 1993-2017 NVIDIA Corporation.  All rights reserved.
  *
  * Please refer to the NVIDIA end user license agreement (EULA) associated
  * with this source code for terms and conditions that govern your use of
@@ -9,11 +9,11 @@
  *
  */
 
+
 #ifndef _CUDAPROCESSFRAME_H_
 #define _CUDAPROCESSFRAME_H_
 
 #include "dynlink_cuda.h" // <cuda.h>
-//#include <vector_types.h>
 
 typedef unsigned char   uint8;
 typedef unsigned int    uint32;
@@ -43,7 +43,7 @@ extern "C"
     CUresult updateConstantMemory_drvapi(CUmodule    cuModule, float *hueColorSpaceMat);
     void     setColorSpaceMatrix(eColorSpace      CSC, float *hueColorSpaceMat, float hue);
 
-    CUresult cudaLaunchNV12toARGB(uint32 *d_srcNV12,        size_t nSourcePitch, 
+    CUresult cudaLaunchNV12toARGB(uint32 *d_srcNV12,        size_t nSourcePitch,
                                   uint32 *d_dstARGB,      size_t nDestPitch,
                                   uint32 width,           uint32 height);
 

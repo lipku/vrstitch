@@ -14,6 +14,7 @@
 
 
 #include <string>
+#include <pthread.h>
 
 #include "RTSPProtocol.h"
 //#include "mp4v2\mp4v2.h"
@@ -31,17 +32,12 @@ extern "C"
 #include <libavutil/samplefmt.h>
 #include <libswresample/swresample.h>
 }
-#pragma comment(lib, "avutil.lib")
-#pragma comment(lib, "swresample.lib")
 
 // forward declarations
 class FrameQueue;
 class VideoParser;
 class app;
 
-namespace Common {
-	class CThread;
-}
 
 // A wrapper class around the CUvideosource entity and API.
 //  The CUvideosource manages video-source streams (right now
@@ -76,14 +72,15 @@ class VideoSource
 
 		int setRecordPath(const std::string record_path);
 			
-			int ProcessStream(unsigned char *pBuffer, unsigned int dwBufSize,unsigned int timestamp,
+		int ProcessStream(unsigned char *pBuffer, unsigned int dwBufSize,unsigned int timestamp,
 									  unsigned int marker,const char* payloadtype);
-			void TaskMonitorData();
+		void TaskMonitorData();
+
+		void play_thread();
 
     private:
         
-		void play_thread(void* lpParam);
-		Common::CThread* play_thread_ptr;
+		pthread_t play_thread_ptr;
 		int bThreadExit;
 
 		bool bStarted;
