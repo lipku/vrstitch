@@ -1,19 +1,19 @@
 set(SOURCE_FILES 
-    app.cpp
-    main.cpp
     srs_librtmp.cpp
     flvenc.cpp
-    g711.c
+    g711.cpp
     RTSPProtocol.cpp
     VideoSource.cpp
     FrameQueue.cpp
     VideoDecoder.cpp
     VideoParser.cpp
     cudaProcessFrame.cpp
-    thirdparty/cuvid/src/cudaModuleMgr.cpp
-    thirdparty/cuvid/src/NvHWEncoder.cpp
-    thirdparty/cuvid/src/dynlink_cuda.cpp
-    thirdparty/cuvid/src/dynlink_nvcuvid.cpp)
+    third_party/cuvid/src/cudaModuleMgr.cpp
+    third_party/cuvid/src/NvHWEncoder.cpp
+    third_party/cuvid/src/dynlink_cuda.cpp
+    third_party/cuvid/src/dynlink_nvcuvid.cpp
+    app.cpp
+    main.cpp)
 
 set(HEADER_FILES
     app.h
@@ -31,9 +31,16 @@ set(HEADER_FILES
 source_group("Source Files" FILES ${SOURCE_FILES})
 source_group("Header Files" FILES ${HEADER_FILES})
 
+set(INCLUDE_DIRS
+	third_party/cuvid/inc
+	/usr/local/include/BasicUsageEnvironment
+	/usr/local/include/groupsock
+	/usr/local/include/UsageEnvironment
+	/usr/local/include/liveMedia)
+
 add_executable(nvstitch_sample ${SOURCE_FILES} ${HEADER_FILES})
-target_include_directories(nvstitch_sample PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} thirdparty/cuvid/inc)
-target_link_libraries(nvstitch_sample PRIVATE nvstitch common_sample common_util OpenCV)
+target_include_directories(nvstitch_sample PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${INCLUDE_DIRS})
+target_link_libraries(nvstitch_sample PRIVATE nvstitch nvss_video nvsf_lowlevel common_sample common_util OpenCV fdk-aac liveMedia BasicUsageEnvironment UsageEnvironment groupsock swresample avutil pthread dl)
 
 set_target_properties(nvstitch_sample PROPERTIES FOLDER SampleApps)
 

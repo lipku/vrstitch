@@ -1,6 +1,6 @@
 <config>
 
-	<input_dir_base>..\..\footage\</input_dir_base>
+	<input_dir_base>../footage/</input_dir_base>
 	<rig_spec>rig_spec-ipcam4.xml</rig_spec>
 	<calib_rig_spec>calib_rig_spec-ipcam-test.xml</calib_rig_spec>
 	<use_calibrate>true</use_calibrate>
@@ -10,10 +10,10 @@
 	<!--<record>
 		<record_path>.</record_path>
 	</record> -->
-	<audio>
+	<!--<audio>
 		<audio_rig_spec>audio_rig_spec-mic.xml</audio_rig_spec>
 		<audio_input>audio_rig_spec-mic.xml</audio_input>
 		<audio_type>mic</audio_type>
-	</audio>
+	</audio>-->
 
 </config>

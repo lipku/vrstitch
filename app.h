@@ -219,7 +219,7 @@ public:
 	int processStitchedOutput(unsigned char* buffer, int bufsize, int64_t timestamp);
 
 	void stitch_thread();
-	//void stitch_out_thread();
+	void stitch_out_thread(); //not use
 	void stitch_audio_thread();
 	void encode_thread();
 
@@ -258,16 +258,16 @@ private:
 	//MP4TrackId mp4AudioTrack_;
 	flv_t *flvHandle_;
 	
-	pthread_t stitch_thread_ptr=NULL;
+	pthread_t stitch_thread_ptr=0;
 	int bStitchThreadExit;
 
 	//pthread_t stitch_out_thread_ptr=NULL;
-	//int bStitchOutThreadExit;
+	int bStitchOutThreadExit;
 	
-	pthread_t stitch_audio_thread_ptr=NULL;
+	pthread_t stitch_audio_thread_ptr=0;
 	int bStitchAudioThreadExit;
 
-	pthread_t encode_thread_ptr=NULL;
+	pthread_t encode_thread_ptr=0;
 	int bEncodeThreadExit;
 
 	CUVIDEOFORMAT	stFormat_;
@@ -279,7 +279,7 @@ private:
 	CUvideoctxlock     oCtxLock_[4];
 	CUdeviceptr    pCudaFrame_;
 	CUdeviceptr    pCudaFrameNV12_;
-	BYTE          *pFrameYUV_;
+	unsigned int   *pFrameYUV_;
 	//BYTE          *pFrameRGBA_;
 
 	CNvHWEncoder    *m_pNvHWEncoder;

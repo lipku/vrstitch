@@ -19,6 +19,7 @@
 
 #include "FrameQueue.h"
 #include "VideoParser.h"
+
 #include "g711.h"
 
 static unsigned int msecond()
@@ -33,7 +34,7 @@ VideoSource::VideoSource()
 {
 	bThreadExit = false;
 	bStarted = false;
-	play_thread_ptr = NULL;
+	play_thread_ptr = 0;
 
 	recordPath_ = "";
 	startMS = msecond();
@@ -62,7 +63,7 @@ VideoSource::~VideoSource()
 }
 
 
-void CALLBACK funcStreamCallback(unsigned char *pBuffer, unsigned int dwBufSize,unsigned int timestamp,
+void funcStreamCallback(unsigned char *pBuffer, unsigned int dwBufSize,unsigned int timestamp,
 									  unsigned int marker,const char* payloadtype,void* pContext)
 {
 	VideoSource *pRtspDemux=(VideoSource *)pContext;
@@ -201,13 +202,19 @@ int VideoSource::setRecordPath(const std::string record_path)
 	return 0;
 }
 
+void *playProc(void* lpParam)
+{
+	VideoSource *pSource = (VideoSource *)lpParam;
+	pSource->play_thread();
+}
+
 void VideoSource::start()
 {
 	bThreadExit = TRUE;
 	if (play_thread_ptr)
 	{
 		pthread_join(play_thread_ptr, NULL);
-		play_thread_ptr = NULL;
+		play_thread_ptr = 0;
 	}
 
 	/*************mp4file******************************/
@@ -329,7 +336,7 @@ void VideoSource::stop()
 	if (play_thread_ptr)
 	{
 		pthread_join(play_thread_ptr, NULL);
-		play_thread_ptr = NULL;
+		play_thread_ptr = 0;
 	}
 }
 
@@ -338,11 +345,6 @@ bool VideoSource::isStarted()
 	return bStarted;
 }
 
-void playProc(void* lpParam)
-{
-	VideoSource *pSource = (VideoSource *)lpParam;
-	pSource->play_thread();
-}
 
 void VideoSource::play_thread()
 {

@@ -7,8 +7,8 @@
 #include <chrono>
 #include <string>
 #include <time.h>
-#include "cuda.h"
-#include "cuda_runtime.h"
+#include "dynlink_cuda.h"    // <cuda.h>
+//#include "cuda_runtime.h"
 
 //#include "image_io_util.hpp"
 #include "VideoSource.h"
@@ -17,7 +17,7 @@
 
 #include "helper_functions.h"
 #include "helper_cuda_drvapi.h"
-//#include "dynlink_builtin_types.h"      // <builtin_types.h>
+#include "dynlink_builtin_types.h"      // <builtin_types.h>
 
 #include "cudaProcessFrame.h"
 #include "cudaModuleMgr.h"
@@ -226,6 +226,24 @@ int app::processStitchedOutput(unsigned char* buffer, int bufsize, int64_t times
 	return 0;
 }
 
+void *stitchAudioProc(void* lpParam)
+{
+	app *pApp=(app*)lpParam;
+	pApp->stitch_audio_thread();
+}
+
+void *stitchProc(void* lpParam)
+{
+	app *pApp=(app*)lpParam;
+	pApp->stitch_thread();
+}
+
+void *encodeProc(void* lpParam)
+{
+	app *pApp=(app*)lpParam;
+	pApp->encode_thread();
+}
+
 
 nvstitchResult
 app::run(appParams *params)
@@ -396,7 +414,7 @@ app::run(appParams *params)
 
 	//====================================================================
 	// Initialize the CUDA and NVDECODE
-	typedef HMODULE CUDADRIVER;
+	typedef void *CUDADRIVER;
 	CUDADRIVER hHandleDriver = 0;
 	CUresult cuResult;
 	cuResult = cuInit(0, __CUDA_API_VERSION, hHandleDriver);
@@ -425,7 +443,7 @@ app::run(appParams *params)
 		printf(">> Please rebuild NV12ToARGB_drvapi.cu or re-install this sample.\n");
 	}*/
 
-	g_pCudaModule = new CUmoduleManager("NV12ToARGB_drvapi_x64.ptx", ".", 2, 2, 2);
+	g_pCudaModule = new CUmoduleManager("NV12ToARGB_drvapi_x64.ptx", "./", 2, 2, 2);
 	g_pCudaModule->GetCudaFunction("NV12ToARGB_drvapi", &g_kernelNV12toARGB);
 
 	CUresult result;
@@ -459,7 +477,7 @@ app::run(appParams *params)
 			assert(0);
 		}
 
-		pFrameQueues[i]= new FrameQueue;
+		pFrameQueues[i]= new CUVIDFrameQueue(oCtxLock_[i]);
 		pVideoDecoders[i] = new VideoDecoder(stFormat_, oContext_, cudaVideoCreate_PreferCUVID, oCtxLock_[i]);
 		pVideoParsers[i] = new VideoParser(pVideoDecoders[i], pFrameQueues[i], &oFormatEx);
 		s_videoSources[i]->setParser(*pVideoParsers[i], oContext_,0);
@@ -467,7 +485,7 @@ app::run(appParams *params)
 	}
 
 	checkCudaErrors(cuStreamCreate(&g_KernelSID, 0));
-	//checkCudaErrors(cuStreamCreate(&g_ReadbackSID, 0));
+	checkCudaErrors(cuStreamCreate(&g_ReadbackSID, 0));
 
 	checkCudaErrors(cuMemAlloc(&pCudaFrame_, (pVideoDecoders[0]->targetWidth() *4+1 ) * pVideoDecoders[0]->targetHeight() ));
 	checkCudaErrors(cuMemAlloc(&pCudaFrameNV12_, pVideoDecoders[0]->targetWidth() * pVideoDecoders[0]->targetHeight()*3/2));
@@ -481,13 +499,14 @@ app::run(appParams *params)
 	/******init nvss*****************************************/
 	if (!params->use_calibrate)
 	{
-		int num_gpus;
-		cudaGetDeviceCount(&num_gpus);
+		//int num_gpus;
+		//cudaGetDeviceCount(&num_gpus);
 
 		std::vector<int> gpus;
-		gpus.reserve(num_gpus);
+		gpus.reserve(1);  //num_gpus
+		gpus.push_back(0);
 
-		for (int gpu = 0; gpu < num_gpus; ++gpu)
+		/*for (int gpu = 0; gpu < num_gpus; ++gpu)
 		{
 			cudaDeviceProp prop;
 			cudaGetDeviceProperties(&prop, gpu);
@@ -501,7 +520,7 @@ app::run(appParams *params)
 				//if (!params->stereo_flag)
 				break;
 			}
-		}
+		}*/
 		nvssVideoStitcherProperties_t stitcher_props{ 0 };
 		stitcher_props.version = NVSTITCH_VERSION;
 		stitcher_props.pano_width = m_params->stitcher_properties.output_payloads->image_size.x;
@@ -522,9 +541,7 @@ app::run(appParams *params)
 	bStitchThreadExit = FALSE;
 	pthread_create(&stitch_thread_ptr, NULL, stitchProc, (void*)this);
 
-	//start encode thread
-	Common::ThreadCallback cbEnc = BIND_MEM_CB(&app::encode_thread, this);
-	
+	//start encode thread	
 	bEncodeThreadExit = FALSE;
 	pthread_create(&encode_thread_ptr, NULL, encodeProc, (void*)this);
 	//--------------------------------------------------------------------
@@ -548,21 +565,21 @@ app::run(appParams *params)
 	if (stitch_thread_ptr)
 	{
 		pthread_join(stitch_thread_ptr, NULL);
-		stitch_thread_ptr = NULL;
+		stitch_thread_ptr = 0;
 	}
 
 	bStitchAudioThreadExit = TRUE;
 	if (stitch_audio_thread_ptr)
 	{
 		pthread_join(stitch_audio_thread_ptr, NULL);
-		stitch_audio_thread_ptr = NULL;
+		stitch_audio_thread_ptr = 0;
 	}
 
 	bEncodeThreadExit = TRUE;
 	if (encode_thread_ptr)
 	{
 		pthread_join(encode_thread_ptr, NULL);
-		encode_thread_ptr = NULL;
+		encode_thread_ptr = 0;
 	}
 
 	ReleaseIOBuffers();
@@ -624,12 +641,6 @@ app::run(appParams *params)
 	return NVSTITCH_SUCCESS;
 }
 
-
-void app::stitch_thread(void* lpParam)
-{
-	app *pApp=(app*)lpParam;
-	pApp->stitch_thread();
-}
 
 void app::stitch_thread()
 {
@@ -699,20 +710,20 @@ void app::stitch_thread()
 					cudaPostProcessFrame(&pDecodedFrame, nDecodedPitch, pVideoDecoders[i]->GetNumBytesPerSample(), &pCudaFrame_,
 						pVideoDecoders[i]->targetWidth() * 4, pVideoDecoders[i]->targetWidth(), pVideoDecoders[i]->targetHeight(),
 						g_pCudaModule->getModule(), g_kernelNV12toARGB, g_KernelSID); //g_pCudaModule->getModule()
-					/*result = cuMemcpyDtoHAsync(pFrameYUV_, pCudaFrame_, (pVideoDecoders[i]->targetWidth() * pVideoDecoders[i]->targetHeight() * 4), g_ReadbackSID);
+					CUresult result = cuMemcpyDtoHAsync(pFrameYUV_, pCudaFrame_, (pVideoDecoders[i]->targetWidth() * pVideoDecoders[i]->targetHeight() * 4), g_ReadbackSID);
 					if (result != CUDA_SUCCESS)
 					{
 						printf("cuMemAllocHost returned %d\n", (int)result);
 						checkCudaErrors(result);
 					}
-					checkCudaErrors(cuStreamSynchronize(g_ReadbackSID));*/
-					if (cudaMemcpy2D(pFrameYUV_, pVideoDecoders[i]->targetWidth() *4,
+					checkCudaErrors(cuStreamSynchronize(g_ReadbackSID));
+					/*if (cudaMemcpy2D(pFrameYUV_, pVideoDecoders[i]->targetWidth() *4,
 						(void*)pCudaFrame_, pVideoDecoders[i]->targetWidth() * 4,
 						pVideoDecoders[i]->targetWidth()*4, pVideoDecoders[i]->targetHeight(),
 						cudaMemcpyDeviceToHost) != cudaSuccess)
 					{
 						std::cout << "Error copying output stacked panorama from CUDA buffer" << std::endl;
-					}
+					}*/
 					cuvidCtxUnlock(oCtxLock_[i], 0);
 
 					/******test to del***********/
@@ -721,7 +732,7 @@ void app::stitch_thread()
 					//putRgbaImage(filename, pFrameYUV_, pVideoDecoders[i]->targetWidth(), pVideoDecoders[i]->targetHeight());  lihengz
 					//----------------------------
 
-					nvstitchPayload_t calib_payload = nvstitchPayload_t{ calib_prop.input_form,{ pVideoDecoders[i]->targetWidth(), pVideoDecoders[i]->targetHeight() } };
+					nvstitchPayload_t calib_payload = nvstitchPayload_t{ calib_prop.input_form,{(uint32_t)pVideoDecoders[i]->targetWidth(), (uint32_t)pVideoDecoders[i]->targetHeight() } };
 
 					calib_payload.payload.buffer.ptr = (void*)pFrameYUV_;
 
@@ -740,7 +751,7 @@ void app::stitch_thread()
 
 					CUstream_st *inStreamID;
 					CHECK_NVSS_ERROR(nvssVideoGetInputStream(stitcher, i, &inStreamID));
-					cudaStreamSynchronize(inStreamID);
+					cuStreamSynchronize(inStreamID);
 
 					cuvidCtxLock(oCtxLock_[i], 0);
 					
@@ -748,13 +759,13 @@ void app::stitch_thread()
 					{
 						std::cout << "Error nDecodedPitch:" << nDecodedPitch << std::endl;
 					}
-					/*cudaPostProcessFrame(&pDecodedFrame, nDecodedPitch, pVideoDecoders[i]->GetNumBytesPerSample(),
+					cudaPostProcessFrame(&pDecodedFrame, nDecodedPitch, pVideoDecoders[i]->GetNumBytesPerSample(),
 						(CUdeviceptr*)&input_image.dev_ptr,
 						pVideoDecoders[i]->targetWidth() * 4, pVideoDecoders[i]->targetWidth(), pVideoDecoders[i]->targetHeight(),
-						NULL, NULL, g_KernelSID);
-					cudaStreamSynchronize(g_KernelSID);*/
+						g_pCudaModule->getModule(), g_kernelNV12toARGB, g_KernelSID);
+					cuStreamSynchronize(g_KernelSID);
 
-					cudaError_t cudaerr;
+					/*CUresult cudaerr;
 					if (cudaMemcpy((void *)pCudaFrameNV12_, (void *)pDecodedFrame, pVideoDecoders[i]->targetWidth()*pVideoDecoders[i]->targetHeight() * 3 / 2,
 						cudaMemcpyDeviceToDevice) != cudaSuccess)
 					{
@@ -763,7 +774,7 @@ void app::stitch_thread()
 					cudaPostProcessFrame(&pCudaFrameNV12_, nDecodedPitch, pVideoDecoders[i]->GetNumBytesPerSample(), &pCudaFrame_,
 						pVideoDecoders[i]->targetWidth()*4 , pVideoDecoders[i]->targetWidth(), pVideoDecoders[i]->targetHeight(),
 						g_pCudaModule->getModule(), g_kernelNV12toARGB, g_KernelSID);
-					cudaStreamSynchronize(g_KernelSID);
+					cuStreamSynchronize(g_KernelSID);
 
 					if ((cudaerr = cudaMemcpy2D(input_image.dev_ptr, input_image.pitch,
 						(void *)pCudaFrame_, pVideoDecoders[i]->targetWidth()*4,
@@ -776,7 +787,7 @@ void app::stitch_thread()
 						pFrameQueues[i]->releaseFrame(&oDisplayInfo);					
 						continue;
 						//return NVSTITCH_ERROR_GENERAL;
-					}
+					}*/
 
 					/*if (cudaMemcpy(pFrameYUV_, (void *)pDecodedFrame, pVideoDecoders[i]->targetWidth()*pVideoDecoders[i]->targetHeight()*3/2,
 						cudaMemcpyDeviceToHost) != cudaSuccess)
@@ -809,13 +820,14 @@ void app::stitch_thread()
 		{
 			if (!calibrated_)
 			{
-				int num_gpus;
-				cudaGetDeviceCount(&num_gpus);
+				//int num_gpus;
+				//cudaGetDeviceCount(&num_gpus);
 
 				std::vector<int> gpus;
-				gpus.reserve(num_gpus);
+				gpus.reserve(1);  //num_gpus
+				gpus.push_back(0);
 
-				for (int gpu = 0; gpu < num_gpus; ++gpu)
+				/*for (int gpu = 0; gpu < num_gpus; ++gpu)
 				{
 					cudaDeviceProp prop;
 					cudaGetDeviceProperties(&prop, gpu);
@@ -829,7 +841,7 @@ void app::stitch_thread()
 						//if (!params->stereo_flag)
 						break;
 					}
-				}
+				}*/
 				nvssVideoStitcherProperties_t stitcher_props{ 0 };
 				stitcher_props.version = NVSTITCH_VERSION;
 				stitcher_props.pano_width = m_params->stitcher_properties.output_payloads->image_size.x;
@@ -923,7 +935,7 @@ nvstitchResult app::getStitchedOut()
 		CUstream_st *outStreamID;
 		RETURN_NVSS_ERROR(nvssVideoGetOutputStream(stitcher, NVSTITCH_EYE_MONO, &outStreamID));
 		// Synchronize CUDA before snapping end time 
-		cudaStreamSynchronize(outStreamID);
+		cuStreamSynchronize(outStreamID);
 
 		//unsigned char *out_stacked = nullptr;
 		nvstitchImageBuffer_t output_image;
@@ -936,10 +948,12 @@ nvstitchResult app::getStitchedOut()
 			std::cout << "Error m_EncodeBufferQueue.GetAvailable" << std::endl;
 			return NVSTITCH_ERROR_GENERAL;
 		}
-		if (cudaMemcpy2D((void*)pEncodeBuffer->stInputBfr.pNV12devPtr, pEncodeBuffer->stInputBfr.uNV12Stride,
+		/*if (cudaMemcpy2D((void*)pEncodeBuffer->stInputBfr.pNV12devPtr, pEncodeBuffer->stInputBfr.uNV12Stride,
 			output_image.dev_ptr, output_image.pitch,
 			output_image.row_bytes, output_image.height,
-			cudaMemcpyDeviceToDevice) != cudaSuccess)
+			cudaMemcpyDeviceToDevice) != cudaSuccess)*/
+		if(cuMemcpyDtoD((CUdeviceptr)pEncodeBuffer->stInputBfr.pNV12devPtr,
+			            (CUdeviceptr)output_image.dev_ptr, output_image.row_bytes * output_image.height) != CUDA_SUCCESS)
 		{
 			std::cout << "Error copying RGBA image bitmap to CUDA buffer" << std::endl;
 			m_EncodeBufferQueue.incPending();
@@ -962,7 +976,7 @@ nvstitchResult app::getStitchedOut()
 }
 
 
-void app::stitch_out_thread(void* lpParam)  //not use
+void app::stitch_out_thread()  //not use
 {
 	// Synchronize CUDA before snapping start time
 	//cudaStreamSynchronize(cudaStreamDefault);
@@ -972,7 +986,7 @@ void app::stitch_out_thread(void* lpParam)  //not use
 		CUstream_st *outStreamID;
 		CHECK_NVSS_ERROR(nvssVideoGetOutputStream(stitcher, NVSTITCH_EYE_MONO, &outStreamID));
 		// Synchronize CUDA before snapping end time 
-		cudaStreamSynchronize(outStreamID);
+		cuStreamSynchronize(outStreamID);
 
 		//unsigned char *out_stacked = nullptr;
 		nvstitchImageBuffer_t output_image;
@@ -986,10 +1000,12 @@ void app::stitch_out_thread(void* lpParam)  //not use
 			continue;
 			//return NVSTITCH_ERROR_GENERAL;
 		}
-		if (cudaMemcpy2D((void*)pEncodeBuffer->stInputBfr.pNV12devPtr, pEncodeBuffer->stInputBfr.uNV12Stride,
+		/*if (cudaMemcpy2D((void*)pEncodeBuffer->stInputBfr.pNV12devPtr, pEncodeBuffer->stInputBfr.uNV12Stride,
 			output_image.dev_ptr, output_image.pitch,
 			output_image.row_bytes, output_image.height,
-			cudaMemcpyDeviceToDevice) != cudaSuccess)
+			cudaMemcpyDeviceToDevice) != cudaSuccess)*/
+		if(cuMemcpyDtoD((CUdeviceptr)pEncodeBuffer->stInputBfr.pNV12devPtr,
+			            (CUdeviceptr)output_image.dev_ptr, output_image.row_bytes * output_image.height) != CUDA_SUCCESS)
 		{
 			std::cout << "Error copying RGBA image bitmap to CUDA buffer" << std::endl;
 			continue;
@@ -1028,12 +1044,6 @@ void app::stitch_out_thread(void* lpParam)  //not use
 	free(out_stacked);*/
 
 	//return NVSTITCH_SUCCESS;
-}
-
-void encodeProc(void* lpParam)
-{
-	app *pApp=(app*)lpParam;
-	pApp->encode_thread();
 }
 
 void app::encode_thread()
@@ -1310,11 +1320,6 @@ nvstitchResult app::feedAudioData(int index, void* pData, int size, int64_t time
 	return NVSTITCH_SUCCESS;
 }
 
-void stitchAudioThread(void* lpParam)
-{
-	app *pApp=(app*)lpParam;
-	pApp->stitch_audio_thread();
-}
 
 void app::stitch_audio_thread()
 {
