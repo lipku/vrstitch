@@ -206,6 +206,7 @@ typedef enum
 
 
 class VideoSource;
+class AudioCap;
 class app
 {
 public:
@@ -237,7 +238,7 @@ private:
 	std::vector<VideoSource*> s_videoSources;
 	bool  calibrated_ = false;
 
-	//AudioCap *audioCap_;
+	AudioCap *audioCap_ = NULL;
 	nvsf_t nvsfContext_ = NULL;
 	nvsfInputDescriptor_t* inputs_=NULL;
 	nvsfInput_t* inputHandles_=NULL;

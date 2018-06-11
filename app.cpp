@@ -13,6 +13,7 @@
 
 //#include "image_io_util.hpp"
 #include "VideoSource.h"
+#include "audiocap.h"
 
 #include "srs_librtmp.h"
 
@@ -371,8 +372,8 @@ app::run(appParams *params)
 		initAACEncode();
 		if (params->audio_type == "mic")
 		{
-			/*audioCap_ = new AudioCap(0, this);
-			audioCap_->StartCap();*/
+			audioCap_ = new AudioCap(0, this);
+			audioCap_->StartCap();
 		}
 		else
 		{
@@ -592,6 +593,10 @@ app::run(appParams *params)
 		delete m_pNvHWEncoder;
 	}
 
+	if (audioCap_)
+	{
+		delete audioCap_;
+	}
 	if(m_aacEncHandle)
 		aacEncClose(&m_aacEncHandle);
 	if (nvsfContext_)

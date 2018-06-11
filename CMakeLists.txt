@@ -12,11 +12,13 @@ set(SOURCE_FILES
     third_party/cuvid/src/NvHWEncoder.cpp
     third_party/cuvid/src/dynlink_cuda.cpp
     third_party/cuvid/src/dynlink_nvcuvid.cpp
+    audiocap.cpp
     app.cpp
     main.cpp)
 
 set(HEADER_FILES
     app.h
+    audiocap.h
     srs_librtmp.h
     flv.h
     g711.h
