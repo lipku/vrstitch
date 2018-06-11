@@ -42,8 +42,8 @@ tcuCtxAttach                          *cuCtxAttach;
 tcuCtxDetach                          *cuCtxDetach;
 tcuCtxPushCurrent                     *cuCtxPushCurrent;
 tcuCtxPopCurrent                      *cuCtxPopCurrent;
-tcuCtxGetCurrent                      *cuCtxGetCurrent;
-tcuCtxSetCurrent                      *cuCtxSetCurrent;
+//tcuCtxGetCurrent                      *cuCtxGetCurrent;
+//tcuCtxSetCurrent                      *cuCtxSetCurrent;
 tcuCtxGetDevice                       *cuCtxGetDevice;
 tcuCtxSynchronize                     *cuCtxSynchronize;
 tcuModuleLoad                         *cuModuleLoad;
@@ -632,8 +632,8 @@ CUresult CUDAAPI cuInit(unsigned int Flags, int cudaVersion, void *pHandleDriver
 
     if (driverVer >= 4000)
     {
-        GET_PROC(cuCtxSetCurrent);
-        GET_PROC(cuCtxGetCurrent);
+        //GET_PROC(cuCtxSetCurrent);
+        //GET_PROC(cuCtxGetCurrent);
         GET_PROC(cuMemHostRegister);
         GET_PROC(cuMemHostUnregister);
         GET_PROC(cuMemcpy);

@@ -7,8 +7,9 @@
 #include <chrono>
 #include <string>
 #include <time.h>
-#include "dynlink_cuda.h"    // <cuda.h>
-//#include "cuda_runtime.h"
+//#include "dynlink_cuda.h"    // <cuda.h>
+#include "cuda.h"
+#include "cuda_runtime.h"
 
 //#include "image_io_util.hpp"
 #include "VideoSource.h"
@@ -17,7 +18,7 @@
 
 #include "helper_functions.h"
 #include "helper_cuda_drvapi.h"
-#include "dynlink_builtin_types.h"      // <builtin_types.h>
+//#include "dynlink_builtin_types.h"      // <builtin_types.h>
 
 #include "cudaProcessFrame.h"
 #include "cudaModuleMgr.h"
@@ -80,7 +81,7 @@ static void cudaPostProcessFrame(CUdeviceptr *ppDecodedFrame, size_t nDecodedPit
 	CUresult eResult;
 	eResult = cudaLaunchNV12toARGBDrv(*ppDecodedFrame, nDecodedPitch, nBytesPerSample,
 		*ppTextureData, nTexturePitch,
-		nWidth, nHeight, fpCudaKernel, streamID);
+		nWidth, nHeight, fpCudaKernel, streamID); 
 }
 
 nvstitchResult
@@ -414,17 +415,19 @@ app::run(appParams *params)
 
 	//====================================================================
 	// Initialize the CUDA and NVDECODE
+	printf("__CUDA_API_VERSION=%d\n",__CUDA_API_VERSION);
+
+	CUresult cuResult;
 	typedef void *CUDADRIVER;
 	CUDADRIVER hHandleDriver = 0;
-	CUresult cuResult;
-	cuResult = cuInit(0, __CUDA_API_VERSION, hHandleDriver);
+	cuResult = cuInit(0, __CUDA_API_VERSION, hHandleDriver); 
 	cuResult = cuvidInit(0);
 
 	CUdevice cuda_device = gpuGetMaxGflopsDeviceIdDRV();
-	checkCudaErrors(cuDeviceGet(&oDevice_, cuda_device));
-	checkCudaErrors(cuCtxCreate(&oContext_, CU_CTX_BLOCKING_SYNC, oDevice_));
+	cuDeviceGet(&oDevice_, cuda_device);
+	cuCtxCreate(&oContext_, CU_CTX_BLOCKING_SYNC, oDevice_);
 
-	cuCtxPushCurrent(oContext_);
+	cuCtxPushCurrent(oContext_);  
 	/*try
 	{
 		char FilePath[MAX_PATH + 1] = { 0 };
@@ -484,29 +487,29 @@ app::run(appParams *params)
 
 	}
 
-	checkCudaErrors(cuStreamCreate(&g_KernelSID, 0));
-	checkCudaErrors(cuStreamCreate(&g_ReadbackSID, 0));
+	cuStreamCreate(&g_KernelSID, 0);
+	cuStreamCreate(&g_ReadbackSID, 0);
 
-	checkCudaErrors(cuMemAlloc(&pCudaFrame_, (pVideoDecoders[0]->targetWidth() *4+1 ) * pVideoDecoders[0]->targetHeight() ));
-	checkCudaErrors(cuMemAlloc(&pCudaFrameNV12_, pVideoDecoders[0]->targetWidth() * pVideoDecoders[0]->targetHeight()*3/2));
-	checkCudaErrors(result = cuMemAllocHost((void **)&pFrameYUV_, pVideoDecoders[0]->targetWidth() * pVideoDecoders[0]->targetHeight() * 4));
+	cudaMalloc((void **)&pCudaFrame_, (pVideoDecoders[0]->targetWidth() *4+1 ) * pVideoDecoders[0]->targetHeight() );
+	cudaMalloc((void **)&pCudaFrameNV12_, pVideoDecoders[0]->targetWidth() * pVideoDecoders[0]->targetHeight()*3/2);
+	cudaMallocHost((void **)&pFrameYUV_, pVideoDecoders[0]->targetWidth() * pVideoDecoders[0]->targetHeight() * 4);
 	//checkCudaErrors(result = cuMemAllocHost((void **)&pFrameRGBA_, pVideoDecoders[0]->targetWidth() * pVideoDecoders[0]->targetHeight() * 4));
 	
-	cuCtxPopCurrent(NULL);
+	cuCtxPopCurrent(NULL);  
 
 	initNVEncode();
 
 	/******init nvss*****************************************/
 	if (!params->use_calibrate)
 	{
-		//int num_gpus;
-		//cudaGetDeviceCount(&num_gpus);
+		int num_gpus;
+		cudaGetDeviceCount(&num_gpus);
 
 		std::vector<int> gpus;
-		gpus.reserve(1);  //num_gpus
-		gpus.push_back(0);
+		gpus.reserve(num_gpus);  //num_gpus
+		//gpus.push_back(0);
 
-		/*for (int gpu = 0; gpu < num_gpus; ++gpu)
+		for (int gpu = 0; gpu < num_gpus; ++gpu)
 		{
 			cudaDeviceProp prop;
 			cudaGetDeviceProperties(&prop, gpu);
@@ -520,7 +523,7 @@ app::run(appParams *params)
 				//if (!params->stereo_flag)
 				break;
 			}
-		}*/
+		}
 		nvssVideoStitcherProperties_t stitcher_props{ 0 };
 		stitcher_props.version = NVSTITCH_VERSION;
 		stitcher_props.pano_width = m_params->stitcher_properties.output_payloads->image_size.x;
@@ -710,20 +713,20 @@ void app::stitch_thread()
 					cudaPostProcessFrame(&pDecodedFrame, nDecodedPitch, pVideoDecoders[i]->GetNumBytesPerSample(), &pCudaFrame_,
 						pVideoDecoders[i]->targetWidth() * 4, pVideoDecoders[i]->targetWidth(), pVideoDecoders[i]->targetHeight(),
 						g_pCudaModule->getModule(), g_kernelNV12toARGB, g_KernelSID); //g_pCudaModule->getModule()
-					CUresult result = cuMemcpyDtoHAsync(pFrameYUV_, pCudaFrame_, (pVideoDecoders[i]->targetWidth() * pVideoDecoders[i]->targetHeight() * 4), g_ReadbackSID);
+					/*CUresult result = cuMemcpyDtoHAsync(pFrameYUV_, pCudaFrame_, (pVideoDecoders[i]->targetWidth() * pVideoDecoders[i]->targetHeight() * 4), g_ReadbackSID);
 					if (result != CUDA_SUCCESS)
 					{
 						printf("cuMemAllocHost returned %d\n", (int)result);
 						checkCudaErrors(result);
 					}
-					checkCudaErrors(cuStreamSynchronize(g_ReadbackSID));
-					/*if (cudaMemcpy2D(pFrameYUV_, pVideoDecoders[i]->targetWidth() *4,
+					cudaStreamSynchronize(g_ReadbackSID);*/
+					if (cudaMemcpy2D(pFrameYUV_, pVideoDecoders[i]->targetWidth() *4,
 						(void*)pCudaFrame_, pVideoDecoders[i]->targetWidth() * 4,
 						pVideoDecoders[i]->targetWidth()*4, pVideoDecoders[i]->targetHeight(),
 						cudaMemcpyDeviceToHost) != cudaSuccess)
 					{
 						std::cout << "Error copying output stacked panorama from CUDA buffer" << std::endl;
-					}*/
+					}
 					cuvidCtxUnlock(oCtxLock_[i], 0);
 
 					/******test to del***********/
@@ -751,7 +754,7 @@ void app::stitch_thread()
 
 					CUstream_st *inStreamID;
 					CHECK_NVSS_ERROR(nvssVideoGetInputStream(stitcher, i, &inStreamID));
-					cuStreamSynchronize(inStreamID);
+					cudaStreamSynchronize(inStreamID);
 
 					cuvidCtxLock(oCtxLock_[i], 0);
 					
@@ -763,7 +766,7 @@ void app::stitch_thread()
 						(CUdeviceptr*)&input_image.dev_ptr,
 						pVideoDecoders[i]->targetWidth() * 4, pVideoDecoders[i]->targetWidth(), pVideoDecoders[i]->targetHeight(),
 						g_pCudaModule->getModule(), g_kernelNV12toARGB, g_KernelSID);
-					cuStreamSynchronize(g_KernelSID);
+					cudaStreamSynchronize(g_KernelSID);
 
 					/*CUresult cudaerr;
 					if (cudaMemcpy((void *)pCudaFrameNV12_, (void *)pDecodedFrame, pVideoDecoders[i]->targetWidth()*pVideoDecoders[i]->targetHeight() * 3 / 2,
@@ -820,14 +823,14 @@ void app::stitch_thread()
 		{
 			if (!calibrated_)
 			{
-				//int num_gpus;
-				//cudaGetDeviceCount(&num_gpus);
+				int num_gpus;
+				cudaGetDeviceCount(&num_gpus);
 
 				std::vector<int> gpus;
-				gpus.reserve(1);  //num_gpus
-				gpus.push_back(0);
+				gpus.reserve(num_gpus);  //num_gpus
+				//gpus.push_back(0);
 
-				/*for (int gpu = 0; gpu < num_gpus; ++gpu)
+				for (int gpu = 0; gpu < num_gpus; ++gpu)
 				{
 					cudaDeviceProp prop;
 					cudaGetDeviceProperties(&prop, gpu);
@@ -841,7 +844,7 @@ void app::stitch_thread()
 						//if (!params->stereo_flag)
 						break;
 					}
-				}*/
+				}
 				nvssVideoStitcherProperties_t stitcher_props{ 0 };
 				stitcher_props.version = NVSTITCH_VERSION;
 				stitcher_props.pano_width = m_params->stitcher_properties.output_payloads->image_size.x;
@@ -935,7 +938,7 @@ nvstitchResult app::getStitchedOut()
 		CUstream_st *outStreamID;
 		RETURN_NVSS_ERROR(nvssVideoGetOutputStream(stitcher, NVSTITCH_EYE_MONO, &outStreamID));
 		// Synchronize CUDA before snapping end time 
-		cuStreamSynchronize(outStreamID);
+		cudaStreamSynchronize(outStreamID);
 
 		//unsigned char *out_stacked = nullptr;
 		nvstitchImageBuffer_t output_image;
@@ -948,12 +951,10 @@ nvstitchResult app::getStitchedOut()
 			std::cout << "Error m_EncodeBufferQueue.GetAvailable" << std::endl;
 			return NVSTITCH_ERROR_GENERAL;
 		}
-		/*if (cudaMemcpy2D((void*)pEncodeBuffer->stInputBfr.pNV12devPtr, pEncodeBuffer->stInputBfr.uNV12Stride,
+		if (cudaMemcpy2D((void*)pEncodeBuffer->stInputBfr.pNV12devPtr, pEncodeBuffer->stInputBfr.uNV12Stride,
 			output_image.dev_ptr, output_image.pitch,
 			output_image.row_bytes, output_image.height,
-			cudaMemcpyDeviceToDevice) != cudaSuccess)*/
-		if(cuMemcpyDtoD((CUdeviceptr)pEncodeBuffer->stInputBfr.pNV12devPtr,
-			            (CUdeviceptr)output_image.dev_ptr, output_image.row_bytes * output_image.height) != CUDA_SUCCESS)
+			cudaMemcpyDeviceToDevice) != cudaSuccess)
 		{
 			std::cout << "Error copying RGBA image bitmap to CUDA buffer" << std::endl;
 			m_EncodeBufferQueue.incPending();
@@ -986,7 +987,7 @@ void app::stitch_out_thread()  //not use
 		CUstream_st *outStreamID;
 		CHECK_NVSS_ERROR(nvssVideoGetOutputStream(stitcher, NVSTITCH_EYE_MONO, &outStreamID));
 		// Synchronize CUDA before snapping end time 
-		cuStreamSynchronize(outStreamID);
+		cudaStreamSynchronize(outStreamID);
 
 		//unsigned char *out_stacked = nullptr;
 		nvstitchImageBuffer_t output_image;
@@ -1000,12 +1001,10 @@ void app::stitch_out_thread()  //not use
 			continue;
 			//return NVSTITCH_ERROR_GENERAL;
 		}
-		/*if (cudaMemcpy2D((void*)pEncodeBuffer->stInputBfr.pNV12devPtr, pEncodeBuffer->stInputBfr.uNV12Stride,
+		if (cudaMemcpy2D((void*)pEncodeBuffer->stInputBfr.pNV12devPtr, pEncodeBuffer->stInputBfr.uNV12Stride,
 			output_image.dev_ptr, output_image.pitch,
 			output_image.row_bytes, output_image.height,
-			cudaMemcpyDeviceToDevice) != cudaSuccess)*/
-		if(cuMemcpyDtoD((CUdeviceptr)pEncodeBuffer->stInputBfr.pNV12devPtr,
-			            (CUdeviceptr)output_image.dev_ptr, output_image.row_bytes * output_image.height) != CUDA_SUCCESS)
+			cudaMemcpyDeviceToDevice) != cudaSuccess)
 		{
 			std::cout << "Error copying RGBA image bitmap to CUDA buffer" << std::endl;
 			continue;
