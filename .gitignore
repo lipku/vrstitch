@@ -8,3 +8,6 @@ install_manifest.txt
 compile_commands.json
 CTestTestfile.cmake
 third_party/bak
+third_party/ffmpeg_3.2_X64
+third_party/live
+third_party/fdkaac

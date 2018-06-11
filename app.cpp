@@ -754,7 +754,7 @@ void app::stitch_thread()
 
 					CUstream_st *inStreamID;
 					CHECK_NVSS_ERROR(nvssVideoGetInputStream(stitcher, i, &inStreamID));
-					cudaStreamSynchronize(inStreamID);
+					//cudaStreamSynchronize(inStreamID);
 
 					cuvidCtxLock(oCtxLock_[i], 0);
 					
@@ -766,7 +766,7 @@ void app::stitch_thread()
 						(CUdeviceptr*)&input_image.dev_ptr,
 						pVideoDecoders[i]->targetWidth() * 4, pVideoDecoders[i]->targetWidth(), pVideoDecoders[i]->targetHeight(),
 						g_pCudaModule->getModule(), g_kernelNV12toARGB, g_KernelSID);
-					cudaStreamSynchronize(g_KernelSID);
+					//cudaStreamSynchronize(g_KernelSID);
 
 					/*CUresult cudaerr;
 					if (cudaMemcpy((void *)pCudaFrameNV12_, (void *)pDecodedFrame, pVideoDecoders[i]->targetWidth()*pVideoDecoders[i]->targetHeight() * 3 / 2,
