@@ -42,7 +42,7 @@ set(INCLUDE_DIRS
 
 add_executable(nvstitch_sample ${SOURCE_FILES} ${HEADER_FILES})
 target_include_directories(nvstitch_sample PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${INCLUDE_DIRS})
-target_link_libraries(nvstitch_sample PRIVATE nvstitch nvss_video nvsf_lowlevel common_sample common_util OpenCV CUDA fdk-aac liveMedia BasicUsageEnvironment UsageEnvironment groupsock swresample avutil pthread dl)
+target_link_libraries(nvstitch_sample PRIVATE nvstitch nvss_video nvsf_lowlevel common_sample common_util OpenCV CUDA fdk-aac liveMedia BasicUsageEnvironment UsageEnvironment groupsock swresample avutil portaudio pthread dl)
 
 set_target_properties(nvstitch_sample PROPERTIES FOLDER SampleApps)
 
