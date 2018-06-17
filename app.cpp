@@ -240,6 +240,12 @@ void *stitchProc(void* lpParam)
 	pApp->stitch_thread();
 }
 
+void *stitchOutProc(void* lpParam)
+{
+	app *pApp=(app*)lpParam;
+	pApp->stitch_out_thread();
+}
+
 void *encodeProc(void* lpParam)
 {
 	app *pApp=(app*)lpParam;
@@ -545,9 +551,13 @@ app::run(appParams *params)
 	bStitchThreadExit = FALSE;
 	pthread_create(&stitch_thread_ptr, NULL, stitchProc, (void*)this);
 
+	//start stitchout thread
+	bStitchOutThreadExit = FALSE;
+	pthread_create(&stitch_out_thread_ptr, NULL, stitchOutProc, (void*)this);
+
 	//start encode thread	
-	bEncodeThreadExit = FALSE;
-	pthread_create(&encode_thread_ptr, NULL, encodeProc, (void*)this);
+	//bEncodeThreadExit = FALSE;
+	//pthread_create(&encode_thread_ptr, NULL, encodeProc, (void*)this);
 	//--------------------------------------------------------------------
 	
 	for (int i = 0; i < params->rig_properties.num_cameras; i++)
@@ -560,10 +570,18 @@ app::run(appParams *params)
 		usleep(1000*1000);
 	}
 
+	bStitchOutThreadExit = TRUE;
+	if (stitch_out_thread_ptr)
+	{
+		pthread_join(stitch_out_thread_ptr, NULL);
+		stitch_out_thread_ptr = 0;
+	}
+
 	for (int i = 0; i < params->rig_properties.num_cameras; i++)
 	{
 		delete s_videoSources[i];
 	}
+
 
 	bStitchThreadExit = TRUE;
 	if (stitch_thread_ptr)
@@ -899,16 +917,8 @@ void app::stitch_thread()
 				}
 
 				//start stitchout thread
-				/*LPVOID arg_ = NULL;
-				Common::ThreadCallback cb = BIND_MEM_CB(&app::stitch_out_thread, this);
-				stitch_out_thread_ptr = new Common::CThread(cb, TRUE);
-				if (!stitch_out_thread_ptr)
-				{
-					printf("create stitch_out_thread fail\n");
-					//return NVSTITCH_SUCCESS;
-				}
-				bStitchOutThreadExit = FALSE;
-				stitch_out_thread_ptr->start(arg_);*/
+				//bStitchOutThreadExit = FALSE;
+				//pthread_create(&stitch_out_thread_ptr, NULL, stitchOutProc, (void*)this);
 
 
 				calibrated_ = true;
@@ -923,10 +933,11 @@ void app::stitch_thread()
 				}*/
 				// Stitch
 				nvstitchResult pRes = nvssVideoStitch(stitcher);
-				if(pRes == NVSTITCH_SUCCESS)
-					getStitchedOut();
-				else
-					std::cerr << "Error at line " << __LINE__ << ": " << nvssVideoGetErrorString(pRes) << std::endl;
+				pthread_cond_signal(&has_stitch);
+				//if(pRes == NVSTITCH_SUCCESS)
+				//	getStitchedOut();
+				//else
+				//	std::cerr << "Error at line " << __LINE__ << ": " << nvssVideoGetErrorString(pRes) << std::endl;
 			}
 			updateFrameNum = 0;
 			memset(updateFrame, 0, sizeof(char)*m_params->rig_properties.num_cameras);
@@ -989,6 +1000,8 @@ void app::stitch_out_thread()  //not use
 
 	while (!bStitchOutThreadExit)
 	{
+		pthread_cond_wait(&has_stitch, &lock);
+
 		CUstream_st *outStreamID;
 		CHECK_NVSS_ERROR(nvssVideoGetOutputStream(stitcher, NVSTITCH_EYE_MONO, &outStreamID));
 		// Synchronize CUDA before snapping end time 
@@ -1002,9 +1015,15 @@ void app::stitch_out_thread()  //not use
 		EncodeBuffer *pEncodeBuffer = m_EncodeBufferQueue.GetAvailable();
 		if (!pEncodeBuffer)
 		{
-			std::cout << "Error m_EncodeBufferQueue.GetAvailable" << std::endl;
-			continue;
-			//return NVSTITCH_ERROR_GENERAL;
+			pEncodeBuffer = m_EncodeBufferQueue.GetPending();
+        	m_pNvHWEncoder->ProcessOutput(pEncodeBuffer);
+        	// UnMap the input buffer after frame done
+        	if (pEncodeBuffer->stInputBfr.hInputSurface)
+        	{
+            	NVENCSTATUS nvStatus = m_pNvHWEncoder->NvEncUnmapInputResource(pEncodeBuffer->stInputBfr.hInputSurface);
+            	pEncodeBuffer->stInputBfr.hInputSurface = NULL;
+        	}
+        	pEncodeBuffer = m_EncodeBufferQueue.GetAvailable();
 		}
 		if (cudaMemcpy2D((void*)pEncodeBuffer->stInputBfr.pNV12devPtr, pEncodeBuffer->stInputBfr.uNV12Stride,
 			output_image.dev_ptr, output_image.pitch,
@@ -1026,8 +1045,21 @@ void app::stitch_out_thread()  //not use
 
 		m_pNvHWEncoder->NvEncEncodeFrame(pEncodeBuffer, NULL, m_stEncoderInput.width, m_stEncoderInput.height);
 
-		m_EncodeBufferQueue.incPending();
+		//m_EncodeBufferQueue.incPending();
 	}
+
+	EncodeBuffer *pEncodeBuffer = m_EncodeBufferQueue.GetPending();
+    while (pEncodeBuffer)
+    {
+        m_pNvHWEncoder->ProcessOutput(pEncodeBuffer);
+        pEncodeBuffer = m_EncodeBufferQueue.GetPending();
+        // UnMap the input buffer after frame is done
+        if (pEncodeBuffer && pEncodeBuffer->stInputBfr.hInputSurface)
+        {
+            NVENCSTATUS nvStatus = m_pNvHWEncoder->NvEncUnmapInputResource(pEncodeBuffer->stInputBfr.hInputSurface);
+            pEncodeBuffer->stInputBfr.hInputSurface = NULL;
+        }
+    }
 
 	/*if (out_stacked == nullptr)
 		out_stacked = (unsigned char *)malloc(output_image.row_bytes * output_image.height);
@@ -1140,8 +1172,8 @@ int app::initNVEncode()
 	if (nvStatus != NV_ENC_SUCCESS)
 		return 1;
 
-	//m_uEncodeBufferCount = encodeConfig.numB + 4;
-	int numMBs = ((encodeConfig.maxHeight + 15) >> 4) * ((encodeConfig.maxWidth + 15) >> 4);
+	m_uEncodeBufferCount = encodeConfig.numB + 4;
+	/*int numMBs = ((encodeConfig.maxHeight + 15) >> 4) * ((encodeConfig.maxWidth + 15) >> 4);
 	int NumIOBuffers;
 	if (numMBs >= 32768) //4kx2k
 		NumIOBuffers = MAX_ENCODE_QUEUE / 8;
@@ -1151,7 +1183,7 @@ int app::initNVEncode()
 		NumIOBuffers = MAX_ENCODE_QUEUE / 2;
 	else
 		NumIOBuffers = MAX_ENCODE_QUEUE;
-	m_uEncodeBufferCount = NumIOBuffers;
+	m_uEncodeBufferCount = NumIOBuffers;*/
 
 	m_stEncoderInput.enableAsyncMode = 0;// encodeConfig.enableAsyncMode;
 	m_stEncoderInput.width = encodeConfig.width;

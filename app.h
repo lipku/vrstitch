@@ -155,7 +155,7 @@ public:
 		}
 		pItem = m_pBuffer[m_uAvailableIdx];
 		m_uAvailableIdx = (m_uAvailableIdx + 1) % m_uSize;
-		//m_uPendingCount += 1;
+		m_uPendingCount += 1;
 		return pItem;
 	}
 
@@ -183,7 +183,7 @@ public:
 
 		T *pItem = m_pBuffer[m_uPendingndex];
 		m_uPendingndex = (m_uPendingndex + 1) % m_uSize;
-		//m_uPendingCount -= 1;
+		m_uPendingCount -= 1;
 		return pItem;
 	}
 };
@@ -262,8 +262,10 @@ private:
 	pthread_t stitch_thread_ptr=0;
 	int bStitchThreadExit;
 
-	//pthread_t stitch_out_thread_ptr=NULL;
+	pthread_t stitch_out_thread_ptr=0;
 	int bStitchOutThreadExit;
+	pthread_cond_t has_stitch = PTHREAD_COND_INITIALIZER;  
+	pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER; 
 	
 	pthread_t stitch_audio_thread_ptr=0;
 	int bStitchAudioThreadExit;
