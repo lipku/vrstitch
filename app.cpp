@@ -1420,7 +1420,7 @@ nvstitchResult app::encodeAAC(const void* pData, int size, int64_t timestamp)
 
 	in_args.numInSamples = size / 2;
 	in_buf.numBufs = 1;
-	in_buf.bufs = &pData;
+	in_buf.bufs = (void **)&pData;
 	in_buf.bufferIdentifiers = &in_identifier;
 	in_buf.bufSizes = &size;
 	in_buf.bufElSizes = &in_elem_size;
