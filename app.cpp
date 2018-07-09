@@ -381,7 +381,7 @@ app::run(appParams *params)
 			audioCap_ = new AudioCap(0, this);
 			audioCap_->StartCap();
 		}
-		else
+		/*else
 		{
 			const uint32_t processingSize = 1024;
 			float stereoSpread = 0.5;
@@ -417,7 +417,7 @@ app::run(appParams *params)
 			//start stitch audio thread
 			bStitchAudioThreadExit = FALSE;
 			pthread_create(&stitch_audio_thread_ptr, NULL, stitchAudioProc, (void*)this);
-		}
+		}*/
 	}
 
 	//====================================================================
@@ -1387,7 +1387,7 @@ void app::stitch_audio_thread()
 						outPcmBuffer[i++] = (short)(sample32 * 32767);
 					}
 				}
-				encodeAAC(outPcmBuffer, 1024 * 4, outtimestamp);
+				encodeAAC((const void*)outPcmBuffer, 1024 * 4, outtimestamp);
 			}
 /*			for (int i = 0; i < m_params->rig_properties.num_cameras; i++)
 			{
@@ -1398,7 +1398,7 @@ void app::stitch_audio_thread()
 	}
 }
 
-nvstitchResult app::encodeAAC(void* pData, int size, int64_t timestamp)
+nvstitchResult app::encodeAAC(const void* pData, int size, int64_t timestamp)
 {
 	if (!m_params->audio_flag)
 		return NVSTITCH_SUCCESS;

@@ -215,7 +215,7 @@ public:
 
 	nvstitchResult feedVideoData(int index, void* pData, int size, int64_t timestamp); //todel
 	nvstitchResult feedAudioData(int index, void* pData, int size, int64_t timestamp); 
-	nvstitchResult encodeAAC(void* pData, int size, int64_t timestamp);
+	nvstitchResult encodeAAC(const void* pData, int size, int64_t timestamp);
 
 	int processStitchedOutput(unsigned char* buffer, int bufsize, int64_t timestamp);
 

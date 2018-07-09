@@ -129,8 +129,8 @@ int VideoSource::ProcessStream(unsigned char *pBuffer, unsigned int dwBufSize,un
 			fprintf(stderr, "Error while converting\n");
 			return -1;
 		}
-		int dst_linesize, dst_nb_channels = 1;
-		enum AVSampleFormat dst_sample_fmt = AV_SAMPLE_FMT_FLT;
+		int dst_linesize, dst_nb_channels = 2;
+		enum AVSampleFormat dst_sample_fmt = AV_SAMPLE_FMT_S16; //AV_SAMPLE_FMT_FLT;
 		int dst_bufsize = av_samples_get_buffer_size(&dst_linesize, dst_nb_channels,
 			ret, dst_sample_fmt, 1);
 		if (dst_bufsize < 0) {
@@ -138,17 +138,15 @@ int VideoSource::ProcessStream(unsigned char *pBuffer, unsigned int dwBufSize,un
 			return -1;
 		}
 
-		m_pApp->feedAudioData(m_index, dst_data_[0], dst_bufsize, timestamp);
+		//m_pApp->feedAudioData(m_index, dst_data_[0], dst_bufsize, timestamp);
+		if(m_index==3)
+			m_pApp->encodeAAC((void *)dst_data_[0], dst_bufsize, timestamp);
 
 	}
-	else {
+	/*else {
 		if(m_audioflag)
 			m_pApp->feedAudioData(m_index, pBuffer, dwBufSize, timestamp);
-		/*if (mp4AudioTrack_)
-		{
-			MP4WriteSample(mp4fileHandle_, mp4AudioTrack_, (const uint8_t *)pBuffer, dwBufSize, MP4_INVALID_DURATION, 0, 1);
-		}*/
-	}
+	}*/
 	
 	return 0;
 }
@@ -263,9 +261,9 @@ void VideoSource::start()
 		MP4SetAudioProfileLevel(mp4fileHandle_, 0x2);*/
 	}
 	/***********resample********************************************/
-	int64_t src_ch_layout = AV_CH_LAYOUT_MONO, dst_ch_layout = AV_CH_LAYOUT_MONO;
+	int64_t src_ch_layout = AV_CH_LAYOUT_MONO, dst_ch_layout = AV_CH_LAYOUT_STEREO;//AV_CH_LAYOUT_MONO;
 	int src_rate = 8000, dst_rate = 44100;
-	enum AVSampleFormat src_sample_fmt = AV_SAMPLE_FMT_S16, dst_sample_fmt = AV_SAMPLE_FMT_FLT;
+	enum AVSampleFormat src_sample_fmt = AV_SAMPLE_FMT_S16, dst_sample_fmt = AV_SAMPLE_FMT_S16; //AV_SAMPLE_FMT_FLT;
 	int ret;
 	int src_nb_channels = 0, dst_nb_channels = 0;
 	int src_linesize, dst_linesize;

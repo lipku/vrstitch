@@ -4,7 +4,7 @@
 #include <stdio.h>
 
 #define SAMPLE_RATE  (44100)
-#define FRAMES_PER_BUFFER (512)
+#define FRAMES_PER_BUFFER (1024)
 #define NUM_CHANNELS    (2)
 
 #define PA_SAMPLE_TYPE  paInt16
@@ -32,7 +32,7 @@ int AudioCap::waveCaptureProcess(const void *inputBuffer, void *outputBuffer,
 {
 	 /* Write recorded data to a file. */  
     //fwrite( inputBuffer, NUM_CHANNELS * sizeof(SAMPLE), framesPerBuffer, fid ); 
-    m_pApp->encodeAAC((void *)inputBuffer, NUM_CHANNELS*sizeof(SAMPLE)*framesPerBuffer, (int64_t)timeInfo->currentTime);
+    m_pApp->encodeAAC(inputBuffer, NUM_CHANNELS*sizeof(SAMPLE)*framesPerBuffer, (int64_t)timeInfo->currentTime);
 }
 
 AudioCap::AudioCap(int index, app *pApp)
