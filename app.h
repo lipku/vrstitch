@@ -224,6 +224,8 @@ public:
 	void stitch_audio_thread();
 	void encode_thread();
 
+	int onAudioStitchedOutput(unsigned char* buffer, int bufsize, int64_t timestamp);
+
 private:
 	nvstitchResult getStitchedOut();
 	int initNVEncode();
@@ -231,7 +233,6 @@ private:
 	NVENCSTATUS     ReleaseIOBuffers();
 
 	int initAACEncode();
-	int onAudioStitchedOutput(unsigned char* buffer, int bufsize, int64_t timestamp);
 
 	nvssVideoHandle stitcher = NULL;
 	appParams *m_params;

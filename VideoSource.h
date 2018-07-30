@@ -21,8 +21,8 @@
 #include "dynlink_nvcuvid.h" // <nvcuvid.h>
 
 #include "flv.h"
-//#include "fdk-aac/aacenc_lib.h"
-//#include "fdk-aac/aacdecoder_lib.h"
+#include "fdk-aac/aacenc_lib.h"
+#include "fdk-aac/aacdecoder_lib.h"
 
 //#include "thread.hpp"
 extern "C"
@@ -78,8 +78,12 @@ class VideoSource
 
 		void play_thread();
 
+		int encodeAAC(const void* pData, int size, int64_t timestamp);
+
     private:
         
+        int initAACEncode(int channel, int samplerate, int bitrate);
+
 		pthread_t play_thread_ptr;
 		int bThreadExit;
 
@@ -115,6 +119,8 @@ class VideoSource
 		uint8_t **src_data_ = NULL, **dst_data_ = NULL;
 		int src_nb_samples_, dst_nb_samples_, max_dst_nb_samples_;
 
+		HANDLE_AACENCODER   m_aacEncHandle;
+		uint8_t m_aacOutbuf[8192];
 		//FILE *fp_test;
 
 };

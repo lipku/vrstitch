@@ -39,6 +39,9 @@ VideoSource::VideoSource()
 	recordPath_ = "";
 	startMS = msecond();
 
+	m_aacEncHandle = NULL;
+	flvHandle_ = NULL;
+
 }
 
 VideoSource::~VideoSource()
@@ -139,8 +142,16 @@ int VideoSource::ProcessStream(unsigned char *pBuffer, unsigned int dwBufSize,un
 		}
 
 		//m_pApp->feedAudioData(m_index, dst_data_[0], dst_bufsize, timestamp);
-		if(m_index==3)
-			m_pApp->encodeAAC((void *)dst_data_[0], dst_bufsize, timestamp);
+		int outsize = encodeAAC((void *)dst_data_[0], dst_bufsize, timestamp);
+		if(outsize>0)
+		{
+			if (flvHandle_)
+			{
+				flv_write_audio_packet(flvHandle_, (uint8_t *)m_aacOutbuf+7, outsize-7, msecond() - startMS); //timestamp
+			}
+			if(m_index==3)
+				m_pApp->onAudioStitchedOutput(m_aacOutbuf, outsize, timestamp);
+		}
 
 	}
 	/*else {
@@ -190,6 +201,9 @@ bool VideoSource::init(const std::string sFileName, int index, app *pApp, bool a
 	m_hRtspHandle = openURL(*env, sFileName.c_str(), -1, funcStreamCallback,this);
 
 	env->taskScheduler().scheduleDelayedTask(10000 * 1000, TaskMonitorDataCallback, this); //10 second
+
+	if(audioflag)
+		initAACEncode(2, 44100, 64000);
 
 	return true;
 }
@@ -350,6 +364,98 @@ void VideoSource::play_thread()
 	env->taskScheduler().doEventLoop(&watchEvent); // does not return
 	//oSourceData_.pFrameQueue->endDecode();
 	bStarted = false;
+}
+
+//-------------------------------audio aac-------------------------------------------------------------------------
+int VideoSource::initAACEncode(int channel, int samplerate, int bitrate)
+{
+	if (aacEncOpen(&m_aacEncHandle, 0, channel) != AACENC_OK) {
+		printf("Unable to open fdkaac encoder\n");
+		return -1;
+	}
+
+	if (aacEncoder_SetParam(m_aacEncHandle, AACENC_AOT, 2) != AACENC_OK) {  //aac lc
+		printf("Unable to set the AOT\n");
+		return -1;
+	}
+
+	if (aacEncoder_SetParam(m_aacEncHandle, AACENC_SAMPLERATE, samplerate) != AACENC_OK) {
+		printf("Unable to set the AOT\n");
+		return -1;
+	}
+	if (aacEncoder_SetParam(m_aacEncHandle, AACENC_CHANNELMODE, MODE_2) != AACENC_OK) {  //2 channle
+		printf("Unable to set the channel mode\n");
+		return -1;
+	}
+	if (aacEncoder_SetParam(m_aacEncHandle, AACENC_BITRATE, bitrate) != AACENC_OK) {
+		printf("Unable to set the bitrate\n");
+		return -1;
+	}
+	if (aacEncoder_SetParam(m_aacEncHandle, AACENC_TRANSMUX, 2) != AACENC_OK) { //0-raw 2-adts
+		printf("Unable to set the ADTS transmux\n");
+		return -1;
+	}
+
+	if (aacEncEncode(m_aacEncHandle, NULL, NULL, NULL, NULL) != AACENC_OK) {
+		printf("Unable to initialize the encoder\n");
+		return -1;
+	}
+
+	AACENC_InfoStruct info = { 0 };
+	if (aacEncInfo(m_aacEncHandle, &info) != AACENC_OK) {
+		printf("Unable to get the encoder info\n");
+		return -1;
+	}
+	return 0;
+}
+
+int VideoSource::encodeAAC(const void* pData, int size, int64_t timestamp)
+{
+	if (!m_aacEncHandle)
+		return -1;
+
+	/*EnterCriticalSection(&aCriticalSection_);
+	m_params->audio_payloads[index].payload.buffer.ptr = pData;
+	m_params->audio_payloads[index].payload.buffer.size = size;
+	m_params->audio_payloads[index].payload.buffer.timestamp = timestamp;
+
+	//RETURN_NVSTITCH_ERROR(nvstitchFeedStitcherAudio(0, stitcher, index, &m_params->audio_payloads[index]));
+
+	LeaveCriticalSection(&aCriticalSection_);*/
+
+	AACENC_BufDesc in_buf = { 0 }, out_buf = { 0 };
+	AACENC_InArgs in_args = { 0 };
+	AACENC_OutArgs out_args = { 0 };
+	int in_identifier = IN_AUDIO_DATA;
+	int in_elem_size = 2;
+
+	in_args.numInSamples = size / 2;
+	in_buf.numBufs = 1;
+	in_buf.bufs = (void **)&pData;
+	in_buf.bufferIdentifiers = &in_identifier;
+	in_buf.bufSizes = &size;
+	in_buf.bufElSizes = &in_elem_size;
+
+	int out_identifier = OUT_BITSTREAM_DATA;
+	void *out_ptr = m_aacOutbuf;
+	int out_size = sizeof(m_aacOutbuf);
+	int out_elem_size = 1;
+	out_buf.numBufs = 1;
+	out_buf.bufs = &out_ptr;
+	out_buf.bufferIdentifiers = &out_identifier;
+	out_buf.bufSizes = &out_size;
+	out_buf.bufElSizes = &out_elem_size;
+
+	if ((aacEncEncode(m_aacEncHandle, &in_buf, &out_buf, &in_args, &out_args)) != AACENC_OK) {
+		fprintf(stderr, "Encoding aac failed\n");
+		return -1;
+	}
+	if (out_args.numOutBytes == 0)
+		return -1;
+	//fwrite(outbuf, 1, out_args.numOutBytes, out);
+	//onAudioStitchedOutput(m_aacOutbuf, out_args.numOutBytes, timestamp);
+
+	return out_args.numOutBytes;
 }
 
 
